@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rebel Alliance Flight Deck — Tactical HUD</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    :root {
+      --ff-sans: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      --ff-mono: 'Courier New', Courier, monospace;
+      --bg-void: #03060c;
+      --surface-panel: #0a101d;
+      --surface-elevated: #11192c;
+      --border-hud: rgba(56, 152, 255, 0.28);
+      --hud-blue: #3898ff;
+      --hud-cyan: #00f0ff;
+      --hud-amber: #ffaa00;
+      --rebel-red: #ff3333;
+      --text-main: #e2ecf9;
+      --text-dim: #7a94b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      background-color: var(--bg-void);
+      color: var(--text-main);
+      font-family: var(--ff-sans);
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    .widget-container {
+      width: 100%;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* --- FLIGHT DECK HEADER & INTEGRATED CHRONOMETER --- */
+    .hud-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 10px 16px;
+      background: linear-gradient(180deg, #101829 0%, #090e18 100%);
+      border: 1px solid var(--border-hud);
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .hud-title-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .hud-title-group h2 {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .rebel-crest {
+      color: var(--rebel-red);
+      font-size: 15px;
+      text-shadow: 0 0 8px rgba(255, 51, 51, 0.7);
+    }
+
+    .hud-subtitle {
+      font-family: var(--ff-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: 0.8px;
+    }
+
+    .hud-right-cluster {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Integrated Flight-Deck Clock Module */
+    .chronometer-module {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      background: #040811;
+      border: 1px solid rgba(0, 240, 255, 0.35);
+      border-radius: 6px;
+      box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.12);
+      font-family: var(--ff-mono);
+    }
+
+    .chrono-label {
+      font-size: 9px;
+      line-height: 1.2;
+      color: var(--hud-cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.85;
+      border-right: 1px solid rgba(0, 240, 255, 0.25);
+      padding-right: 8px;
+    }
+
+    .chrono-time {
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 1.5px;
+      text-shadow: 0 0 8px rgba(0, 240, 255, 0.65);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chrono-sec {
+      font-size: 12px;
+      color: var(--hud-cyan);
+    }
+
+    .hud-badge {
+      font-family: var(--ff-mono);
+      font-size: 11px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(15, 25, 45, 0.9);
+      color: var(--text-dim);
+      border: 1px solid var(--border-hud);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hud-badge.is-active {
+      background: rgba(56, 152, 255, 0.14);
+      color: var(--hud-blue);
+      border-color: var(--hud-blue);
+      font-weight: 600;
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--hud-blue);
+      box-shadow: 0 0 6px var(--hud-blue);
+    }
+
+    /* --- MAIN COCKPIT VIEWPORT --- */
+    .viewport-stack {
+      position: relative;
+      width: 100%;
+      height: 390px;
+      overflow: hidden;
+      border-radius: 12px;
+      background: radial-gradient(circle at center, #081021 0%, #02040a 100%);
+      border: 1.5px solid var(--border-hud);
+      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.95);
+    }
+
+    #webgl-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Subtle Retro CRT Scanlines */
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%,
+          rgba(0, 0, 0, 0.22) 50%);
+      background-size: 100% 4px;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    /* Muzzle Flash Overlay when firing lasers */
+    #cannon-flash {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at bottom, rgba(255, 45, 45, 0.22) 0%, transparent 65%);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 2;
+      transition: opacity 0.08s ease-out;
+    }
+
+    /* X-Wing Canopy Framing SVG */
+    .canopy-frame {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    /* Trench-Run Center Targeting Reticle */
+    #center-reticle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90px;
+      height: 90px;
+      pointer-events: none;
+      z-index: 4;
+      opacity: 0.65;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    #center-reticle.locking {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(0.82);
+    }
+
+    /* Top-Left Telemetry Readout */
+    .hud-overlay-text {
+      position: absolute;
+      top: 14px;
+      left: 16px;
+      font-family: var(--ff-mono);
+      font-size: 11px;
+      color: var(--hud-blue);
+      text-shadow: 0 0 5px rgba(56, 152, 255, 0.6);
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      line-height: 1.3;
+      z-index: 5;
+    }
+
+    /* Top-Right Flight Systems Mini-Status */
+    .hud-systems-status {
+      position: absolute;
+      top: 14px;
+      right: 16px;
+      font-family: var(--ff-mono);
+      font-size: 10px;
+      text-align: right;
+      color: var(--text-dim);
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 5;
+    }
+
+    .sys-ok {
+      color: #00f0ff;
+    }
+
+    .sys-warn {
+      color: var(--hud-amber);
+    }
+
+    /* Bottom-Right Tactical Scope */
+    #scope-canvas {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      width: 144px;
+      height: 144px;
+      border-radius: 50%;
+      border: 1.5px solid rgba(56, 152, 255, 0.45);
+      background: rgba(4, 11, 22, 0.82);
+      backdrop-filter: blur(4px);
+      pointer-events: none;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.8), inset 0 0 12px rgba(56, 152, 255, 0.15);
+      z-index: 5;
+    }
+
+    /* Bottom-Left Auto-Engage Sequence Bar */
+    .timer-bar-container {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      width: calc(100% - 190px);
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .timer-label {
+      font-family: var(--ff-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+      letter-spacing: 0.5px;
+    }
+
+    .timer-track {
+      height: 5px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .timer-fill {
+      height: 100%;
+      width: 100%;
+      background: var(--hud-blue);
+      box-shadow: 0 0 8px var(--hud-blue);
+      transition: width 0.1s linear, background-color 0.3s;
+    }
+
+    .timer-fill.critical {
+      background: var(--rebel-red);
+      box-shadow: 0 0 10px var(--rebel-red);
+    }
+
+    /* --- BOTTOM CONTROL DECK --- */
+    .control-deck {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--surface-panel);
+      border-radius: 10px;
+      border: 1px solid var(--border-hud);
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      min-width: 240px;
+    }
+
+    .control-label {
+      font-family: var(--ff-mono);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-main);
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 5px;
+      background: rgba(56, 152, 255, 0.25);
+      border-radius: 999px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--hud-blue);
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 8px var(--hud-blue);
+      cursor: pointer;
+    }
+
+    .slider-value-box {
+      font-family: var(--ff-mono);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 4px 12px;
+      background: #040811;
+      border: 1px solid var(--border-hud);
+      border-radius: 6px;
+      color: var(--hud-cyan);
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--ff-mono);
+      font-size: 12px;
+      color: var(--text-main);
+      cursor: pointer;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      accent-color: var(--hud-blue);
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .btn-fire {
+      padding: 10px 20px;
+      font-family: var(--ff-mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #ffffff;
+      background: linear-gradient(180deg, #e62e2e 0%, #a81818 100%);
+      border: 1px solid #ff6b6b;
+      border-radius: 999px;
+      cursor: pointer;
+      box-shadow: 0 0 14px rgba(255, 51, 51, 0.4);
+      transition: transform 0.1s ease, box-shadow 0.15s ease;
+    }
+
+    .btn-fire:hover {
+      box-shadow: 0 0 20px rgba(255, 51, 51, 0.75);
+    }
+
+    .btn-fire:active {
+      transform: scale(0.96);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="widget-container">
+    <!-- Flight Deck Header with Integrated Chronometer -->
+    <header class="hud-header">
+      <div class="hud-title-group">
+        <h2><span class="rebel-crest">✦</span> INCOM T-65B TARGETING COMPUTER</h2>
+        <span class="hud-subtitle">ALLIANCE FLIGHT DECK // HYPERSPACE INTERCEPT &amp; RADAR</span>
+      </div>
+
+      <div class="hud-right-cluster">
+        <!-- Molded Flight-Deck Chronometer -->
+        <div class="chronometer-module" title="Flight Deck Local Chronometer">
+          <div class="chrono-label">FLIGHT<br>CHRONO</div>
+          <div class="chrono-time">
+            <span id="clock-hm">10:59</span><span class="chrono-sec" id="clock-s">:00</span>
+          </div>
+        </div>
+
+        <div id="badge-lock" class="hud-badge is-active">
+          <span class="badge-dot"></span>
+          <span id="badge-lock-text">TARGET LOCK: ACTIVE</span>
+        </div>
+
+        <div id="badge-count" class="hud-badge">
+          <span id="badge-count-text">HOSTILES: 3</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Cockpit Viewport -->
+    <div class="viewport-stack">
+      <canvas id="webgl-canvas"></canvas>
+      <div id="cannon-flash"></div>
+      <div class="scanlines"></div>
+
+      <!-- X-Wing Canopy Angled Struts -->
+      <svg class="canopy-frame" viewBox="0 0 1000 400" preserveAspectRatio="none">
+        <!-- Upper Canopy Struts -->
+        <line x1="0" y1="90" x2="180" y2="0" stroke="rgba(56, 152, 255, 0.22)" stroke-width="3" />
+        <line x1="1000" y1="90" x2="820" y2="0" stroke="rgba(56, 152, 255, 0.22)" stroke-width="3" />
+        <!-- Lower Nose Cowling Outline -->
+        <polyline points="0,330 220,385 780,385 1000,330" fill="none" stroke="rgba(56, 152, 255, 0.18)"
+          stroke-width="2" />
+      </svg>
+
+      <!-- Trench-Run Center Targeting Reticle -->
+      <svg id="center-reticle" viewBox="0 0 100 100">
+        <polygon points="50,8 92,50 50,92 8,50" fill="none" stroke="#3898ff" stroke-width="1.2"
+          stroke-dasharray="6 4" />
+        <line x1="50" y1="0" x2="50" y2="25" stroke="#3898ff" stroke-width="1.5" />
+        <line x1="50" y1="75" x2="50" y2="100" stroke="#3898ff" stroke-width="1.5" />
+        <line x1="0" y1="50" x2="25" y2="50" stroke="#3898ff" stroke-width="1.5" />
+        <line x1="75" y1="50" x2="100" y2="50" stroke="#3898ff" stroke-width="1.5" />
+        <circle cx="50" cy="50" r="3" fill="#ff3333" />
+      </svg>
+
+      <!-- Top-Left Telemetry Readout -->
+      <div class="hud-overlay-text">
+        <div>SYS.LOC // CORUSCANT-YAVIN CORRIDOR [0-4]</div>
+        <div>S-FOILS // LOCKED IN ATTACK POSITION</div>
+        <div id="hud-target-coords">LOCKED_ID // TIE-01 [X: 0.0 Y: 0.0 Z: -20.0]</div>
+      </div>
+
+      <!-- Top-Right Subsystems Readout -->
+      <div class="hud-systems-status">
+        <div>DEFLECTORS: <span class="sys-ok">100% FWD/AFT</span></div>
+        <div>LASER CANNONS: <span class="sys-ok">QUAD-LINKED</span></div>
+        <div>HYPERDRIVE: <span class="sys-warn">STANDBY</span></div>
+      </div>
+
+      <!-- Tactical Radar Scope -->
+      <canvas id="scope-canvas" width="144" height="144"></canvas>
+
+      <!-- Bottom-Left Auto-Engage Progress -->
+      <div class="timer-bar-container">
+        <div class="timer-label">
+          <span>AUTO-ENGAGE TORPEDO/LASER</span>
+          <span id="timer-readout">20.0s</span>
+        </div>
+        <div class="timer-track">
+          <div id="timer-fill" class="timer-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Flight Control Deck -->
+    <div class="control-deck">
+      <div class="control-row">
+        <div class="slider-group">
+          <label class="control-label" for="tie-count-slider">TIE Squadron Count</label>
+          <input type="range" id="tie-count-slider" min="1" max="8" value="3">
+          <div id="tie-count-slider-val" class="slider-value-box">3</div>
+        </div>
+
+        <label class="checkbox-label">
+          <input type="checkbox" id="scope-tracking-toggle" checked>
+          <span>Computer Target Lock</span>
+        </label>
+
+        <button id="fire-lasers-btn" class="btn-fire">
+          FIRE QUAD LASERS
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- FLIGHT DECK CHRONOMETER (LIVE CLOCK) ---
+    function updateChronometer() {
+      const now = new Date();
+      const hrs = String(now.getHours()).padStart(2, '0');
+      const mins = String(now.getMinutes()).padStart(2, '0');
+      const secs = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('clock-hm').textContent = `${hrs}:${mins}`;
+      document.getElementById('clock-s').textContent = `:${secs}`;
+    }
+    updateChronometer();
+    setInterval(updateChronometer, 1000);
+
+    // --- SIMULATION STATE ---
+    const state = {
+      tieCount: 3,
+      scopeTracking: true,
+      cycleDuration: 20.0,
+      timeRemaining: 20.0
+    };
+
+    let scene, camera, renderer, webglCanvas;
+    let scopeCanvas, scopeCtx;
+    let ties = [];
+    let hyperspaceLines;
+    let spaceDebris = [];
+    let laserBolts = [];
+    let explosionParticles = [];
+    let rafId = null;
+    let lastTime = performance.now();
+
+    // Wireframe TIE Fighter Builder
+    function createTieFighter() {
+      const group = new THREE.Group();
+      const wireMaterial = new THREE.LineBasicMaterial({ color: 0x3898ff, linewidth: 1 });
+
+      // Cockpit Ball
+      const sphereGeo = new THREE.IcosahedronGeometry(0.85, 1);
+      const sphereWire = new THREE.WireframeGeometry(sphereGeo);
+      group.add(new THREE.LineSegments(sphereWire, wireMaterial));
+
+      // Front Viewport Octagon
+      const windowGeo = new THREE.RingGeometry(0.3, 0.42, 8);
+      const windowWire = new THREE.WireframeGeometry(windowGeo);
+      const viewWindow = new THREE.LineSegments(windowWire, wireMaterial);
+      viewWindow.position.z = 0.8;
+      group.add(viewWindow);
+
+      // Wing Pylons
+      const strutGeo = new THREE.CylinderGeometry(0.12, 0.12, 3.4, 6);
+      const strutWire = new THREE.WireframeGeometry(strutGeo);
+      const struts = new THREE.LineSegments(strutWire, wireMaterial);
+      struts.rotation.z = Math.PI / 2;
+      group.add(struts);
+
+      // Hexagonal Solar Panels
+      const createWing = (xOffset) => {
+        const wingGroup = new THREE.Group();
+        const wingShape = new THREE.BufferGeometry();
+        const r = 1.9;
+        const verts = [];
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI) / 3;
+          verts.push(0, Math.sin(angle) * r, Math.cos(angle) * r);
+        }
+        const indices = [
+          0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 0,
+          0, 3, 1, 4, 2, 5
+        ];
+        wingShape.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        wingShape.setIndex(indices);
+
+        wingGroup.add(new THREE.LineSegments(wingShape, wireMaterial));
+        wingGroup.position.x = xOffset;
+        return wingGroup;
+      };
+
+      group.add(createWing(-1.7));
+      group.add(createWing(1.7));
+
+      group.userData = {
+        baseX: (Math.random() - 0.5) * 16,
+        baseY: (Math.random() - 0.5) * 8,
+        baseZ: -25 - Math.random() * 15,
+        phaseX: Math.random() * Math.PI * 2,
+        phaseY: Math.random() * Math.PI * 2,
+        speedX: 0.75 + Math.random() * 0.75,
+        speedY: 0.55 + Math.random() * 0.55
+      };
+
+      return group;
+    }
+
+    function initThree() {
+      webglCanvas = document.getElementById('webgl-canvas');
+      const box = webglCanvas.parentElement;
+      const w = box.clientWidth || 600;
+      const h = box.clientHeight || 390;
+
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x03060c, 0.013);
+
+      camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 300);
+      camera.position.set(0, 0, 8);
+      camera.lookAt(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true, alpha: true });
+      renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      // Hyperspace Warp Streaks
+      const lineCount = 240;
+      const posArray = new Float32Array(lineCount * 6);
+      for (let i = 0; i < lineCount; i++) {
+        const x = (Math.random() - 0.5) * 70;
+        const y = (Math.random() - 0.5) * 45;
+        const z = -220 + Math.random() * 240;
+        const len = 8 + Math.random() * 18;
+
+        posArray[i * 6 + 0] = x;
+        posArray[i * 6 + 1] = y;
+        posArray[i * 6 + 2] = z;
+
+        posArray[i * 6 + 3] = x;
+        posArray[i * 6 + 4] = y;
+        posArray[i * 6 + 5] = z - len;
+      }
+
+      const warpGeo = new THREE.BufferGeometry();
+      warpGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+      const warpMat = new THREE.LineBasicMaterial({ color: 0x5ca4ff, transparent: true, opacity: 0.48 });
+      hyperspaceLines = new THREE.LineSegments(warpGeo, warpMat);
+      scene.add(hyperspaceLines);
+
+      // Floating Wireframe Space Debris / Asteroids
+      const debMat = new THREE.LineBasicMaterial({ color: 0x3b5984, transparent: true, opacity: 0.45 });
+      for (let i = 0; i < 16; i++) {
+        const geo = new THREE.DodecahedronGeometry(0.4 + Math.random() * 0.7, 0);
+        const wire = new THREE.WireframeGeometry(geo);
+        const mesh = new THREE.LineSegments(wire, debMat);
+        mesh.position.set((Math.random() - 0.5) * 45, (Math.random() - 0.5) * 28, -180 + Math.random() * 180);
+        mesh.userData = {
+          rx: (Math.random() - 0.5) * 1.5,
+          ry: (Math.random() - 0.5) * 1.5,
+          speed: 14 + Math.random() * 12
+        };
+        scene.add(mesh);
+        spaceDebris.push(mesh);
+      }
+
+      updateTieCount(state.tieCount);
+    }
+
+    function updateTieCount(count) {
+      ties.forEach(t => scene.remove(t));
+      ties = [];
+      for (let i = 0; i < count; i++) {
+        const tie = createTieFighter();
+        tie.userData.baseZ = -18 - i * 7;
+        scene.add(tie);
+        ties.push(tie);
+      }
+    }
+
+    // Quad-Laser Rebel Red Discharge
+    function triggerLaserFire() {
+      if (ties.length === 0) return;
+      const primaryTarget = ties[0];
+      const targetPos = primaryTarget.position.clone();
+
+      // Trigger subtle red canopy muzzle flash
+      const flash = document.getElementById('cannon-flash');
+      if (flash) {
+        flash.style.opacity = '1';
+        setTimeout(() => { flash.style.opacity = '0'; }, 90);
+      }
+
+      // Rebel Red Laser Material (#ff2e2e)
+      const laserMat = new THREE.LineBasicMaterial({ color: 0xff2e2e, linewidth: 2 });
+      // Quad X-Wing wingtip cannon origins
+      const origins = [
+        new THREE.Vector3(-3.2, 1.8, 5),
+        new THREE.Vector3(3.2, 1.8, 5),
+        new THREE.Vector3(-3.2, -1.8, 5),
+        new THREE.Vector3(3.2, -1.8, 5)
+      ];
+
+      origins.forEach(orig => {
+        const laserGeo = new THREE.BufferGeometry().setFromPoints([
+          orig,
+          orig.clone().add(new THREE.Vector3(0, 0, -2.5))
+        ]);
+        const laserMesh = new THREE.LineSegments(laserGeo, laserMat);
+        laserMesh.userData = {
+          currentPos: orig.clone(),
+          targetPos: targetPos.clone(),
+          progress: 0
+        };
+        scene.add(laserMesh);
+        laserBolts.push(laserMesh);
+      });
+    }
+
+    function spawnExplosion(pos) {
+      const particleCount = 140;
+      const pGeo = new THREE.BufferGeometry();
+      const pPositions = new Float32Array(particleCount * 3);
+      const velocities = [];
+
+      for (let i = 0; i < particleCount; i++) {
+        pPositions[i * 3 + 0] = pos.x;
+        pPositions[i * 3 + 1] = pos.y;
+        pPositions[i * 3 + 2] = pos.z;
+
+        const dir = new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2
+        ).normalize().multiplyScalar(5 + Math.random() * 14);
+
+        velocities.push(dir);
+      }
+
+      pGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+      const pMat = new THREE.PointsMaterial({
+        color: 0xff6a2b,
+        size: 0.4,
+        transparent: true,
+        opacity: 1.0,
+        blending: THREE.AdditiveBlending
+      });
+
+      const pSystem = new THREE.Points(pGeo, pMat);
+      pSystem.userData = { velocities, life: 1.2 };
+      scene.add(pSystem);
+      explosionParticles.push(pSystem);
+
+      // Respawn target craft evasively
+      if (ties.length > 0) {
+        ties[0].userData.baseX = (Math.random() - 0.5) * 20;
+        ties[0].userData.baseY = (Math.random() - 0.5) * 10;
+        ties[0].userData.baseZ = -38;
+      }
+    }
+
+    function initScope() {
+      scopeCanvas = document.getElementById('scope-canvas');
+      scopeCtx = scopeCanvas.getContext('2d');
+    }
+
+    function drawScopeOverlay(sweepAngle) {
+      if (!scopeCtx) return;
+      const w = scopeCanvas.width;
+      const h = scopeCanvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = w / 2 - 4;
+
+      scopeCtx.clearRect(0, 0, w, h);
+
+      // Radar Rings
+      scopeCtx.strokeStyle = 'rgba(56, 152, 255, 0.25)';
+      scopeCtx.lineWidth = 1;
+      [0.32, 0.65, 0.95].forEach(rRatio => {
+        scopeCtx.beginPath();
+        scopeCtx.arc(cx, cy, radius * rRatio, 0, Math.PI * 2);
+        scopeCtx.stroke();
+      });
+
+      // Crosshairs
+      scopeCtx.beginPath();
+      scopeCtx.moveTo(cx - radius, cy);
+      scopeCtx.lineTo(cx + radius, cy);
+      scopeCtx.moveTo(cx, cy - radius);
+      scopeCtx.lineTo(cx, cy + radius);
+      scopeCtx.stroke();
+
+      // Sweep Line
+      scopeCtx.save();
+      scopeCtx.translate(cx, cy);
+      scopeCtx.rotate(sweepAngle);
+      const grad = scopeCtx.createConicGradient(0, 0, 0);
+      grad.addColorStop(0, 'rgba(56, 152, 255, 0.45)');
+      grad.addColorStop(0.18, 'rgba(56, 152, 255, 0.0)');
+      grad.addColorStop(1, 'rgba(56, 152, 255, 0.0)');
+      scopeCtx.fillStyle = grad;
+      scopeCtx.beginPath();
+      scopeCtx.moveTo(0, 0);
+      scopeCtx.arc(0, 0, radius, -0.45, 0);
+      scopeCtx.closePath();
+      scopeCtx.fill();
+      scopeCtx.restore();
+
+      // TIE Fighter Radar Blips
+      ties.forEach((tie, index) => {
+        const relX = (tie.position.x / 18) * (radius * 0.85);
+        const relY = (-tie.position.y / 10) * (radius * 0.85);
+        const blipX = cx + relX;
+        const blipY = cy + relY;
+
+        const isPrimary = (index === 0) && state.scopeTracking;
+
+        scopeCtx.fillStyle = isPrimary ? '#ff3333' : '#3898ff';
+        scopeCtx.beginPath();
+        scopeCtx.arc(blipX, blipY, isPrimary ? 3.5 : 2.5, 0, Math.PI * 2);
+        scopeCtx.fill();
+
+        if (isPrimary) {
+          scopeCtx.strokeStyle = '#ff3333';
+          scopeCtx.lineWidth = 1.3;
+          const boxS = 11;
+          scopeCtx.strokeRect(blipX - boxS / 2, blipY - boxS / 2, boxS, boxS);
+        }
+      });
+    }
+
+    let sweepAngle = 0;
+
+    function renderLoop(time) {
+      const dt = Math.min(0.05, (time - lastTime) / 1000);
+      lastTime = time;
+
+      if (webglCanvas) {
+        const box = webglCanvas.parentElement;
+        const w = box.clientWidth || 600;
+        const h = box.clientHeight || 390;
+        const dpr = Math.min(window.devicePixelRatio, 2);
+        if (webglCanvas.width !== Math.floor(w * dpr) || webglCanvas.height !== Math.floor(h * dpr)) {
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+        }
+      }
+
+      // Countdown Timer
+      state.timeRemaining -= dt;
+      if (state.timeRemaining <= 0) {
+        triggerLaserFire();
+        state.timeRemaining = state.cycleDuration;
+      }
+
+      const timerFill = document.getElementById('timer-fill');
+      const timerReadout = document.getElementById('timer-readout');
+      const reticle = document.getElementById('center-reticle');
+
+      if (timerFill && timerReadout) {
+        const pct = Math.max(0, (state.timeRemaining / state.cycleDuration) * 100);
+        timerFill.style.width = pct + '%';
+        timerReadout.textContent = state.timeRemaining.toFixed(1) + 's';
+
+        if (state.timeRemaining < 3.0) {
+          timerFill.classList.add('critical');
+          if (reticle) reticle.classList.add('locking');
+        } else {
+          timerFill.classList.remove('critical');
+          if (reticle) reticle.classList.remove('locking');
+        }
+      }
+
+      // Hyperspace Lines Animation
+      if (hyperspaceLines) {
+        const pos = hyperspaceLines.geometry.attributes.position.array;
+        for (let i = 0; i < pos.length / 6; i++) {
+          pos[i * 6 + 2] += 55 * dt;
+          pos[i * 6 + 5] += 55 * dt;
+          if (pos[i * 6 + 2] > 20) {
+            const z = -220 - Math.random() * 20;
+            const len = 8 + Math.random() * 18;
+            pos[i * 6 + 2] = z;
+            pos[i * 6 + 5] = z - len;
+          }
+        }
+        hyperspaceLines.geometry.attributes.position.needsUpdate = true;
+      }
+
+      // Space Debris Animation
+      spaceDebris.forEach(deb => {
+        deb.rotation.x += deb.userData.rx * dt;
+        deb.rotation.y += deb.userData.ry * dt;
+        deb.position.z += deb.userData.speed * dt;
+        if (deb.position.z > 15) {
+          deb.position.z = -180;
+          deb.position.x = (Math.random() - 0.5) * 45;
+          deb.position.y = (Math.random() - 0.5) * 28;
+        }
+      });
+
+      // TIE Squadron Evasive Maneuvers
+      const elapsed = time * 0.001;
+      ties.forEach((tie, i) => {
+        const u = tie.userData;
+        tie.position.x = u.baseX + Math.sin(elapsed * u.speedX + u.phaseX) * 4.8;
+        tie.position.y = u.baseY + Math.cos(elapsed * u.speedY + u.phaseY) * 2.6;
+        tie.position.z = u.baseZ + Math.sin(elapsed + i) * 2.2;
+
+        tie.rotation.z = -Math.cos(elapsed * u.speedX + u.phaseX) * 0.45;
+        tie.rotation.x = Math.sin(elapsed * u.speedY + u.phaseY) * 0.25;
+        tie.rotation.y = Math.sin(elapsed * 0.5) * 0.2;
+      });
+
+      if (ties.length > 0) {
+        const primary = ties[0];
+        const coordsText = document.getElementById('hud-target-coords');
+        if (coordsText) {
+          coordsText.textContent = `LOCKED_ID // TIE-01 [X: ${primary.position.x.toFixed(1)} Y: ${primary.position.y.toFixed(1)} Z: ${primary.position.z.toFixed(1)}]`;
+        }
+      }
+
+      // Rebel Red Laser Bolts
+      for (let i = laserBolts.length - 1; i >= 0; i--) {
+        const bolt = laserBolts[i];
+        const u = bolt.userData;
+        u.progress += dt * 4.0;
+
+        if (u.progress >= 1.0) {
+          // Only trigger explosion once per volley
+          if (i % 4 === 0) spawnExplosion(u.targetPos);
+          scene.remove(bolt);
+          bolt.geometry.dispose();
+          laserBolts.splice(i, 1);
+        } else {
+          const current = u.currentPos.clone().lerp(u.targetPos, u.progress);
+          const end = u.currentPos.clone().lerp(u.targetPos, Math.max(0, u.progress - 0.18));
+          bolt.geometry.setFromPoints([current, end]);
+        }
+      }
+
+      // Explosion Debris Particles
+      for (let i = explosionParticles.length - 1; i >= 0; i--) {
+        const pSystem = explosionParticles[i];
+        pSystem.userData.life -= dt;
+
+        if (pSystem.userData.life <= 0) {
+          scene.remove(pSystem);
+          pSystem.geometry.dispose();
+          pSystem.material.dispose();
+          explosionParticles.splice(i, 1);
+        } else {
+          const pos = pSystem.geometry.attributes.position.array;
+          const vels = pSystem.userData.velocities;
+          for (let j = 0; j < vels.length; j++) {
+            pos[j * 3 + 0] += vels[j].x * dt;
+            pos[j * 3 + 1] += vels[j].y * dt;
+            pos[j * 3 + 2] += vels[j].z * dt;
+          }
+          pSystem.geometry.attributes.position.needsUpdate = true;
+          pSystem.material.opacity = pSystem.userData.life / 1.2;
+        }
+      }
+
+      if (renderer && scene && camera) {
+        renderer.render(scene, camera);
+      }
+
+      sweepAngle = (sweepAngle + dt * 2.5) % (Math.PI * 2);
+      drawScopeOverlay(sweepAngle);
+
+      rafId = requestAnimationFrame(renderLoop);
+    }
+
+    function setupControls() {
+      const tieSlider = document.getElementById('tie-count-slider');
+      if (tieSlider) {
+        tieSlider.addEventListener('input', (e) => {
+          const val = parseInt(e.target.value, 10);
+          state.tieCount = val;
+          document.getElementById('tie-count-slider-val').textContent = val;
+          document.getElementById('badge-count-text').textContent = `HOSTILES: ${val}`;
+          updateTieCount(val);
+        });
+      }
+
+      const trackingToggle = document.getElementById('scope-tracking-toggle');
+      if (trackingToggle) {
+        trackingToggle.addEventListener('change', (e) => {
+          state.scopeTracking = e.target.checked;
+          const lockBadge = document.getElementById('badge-lock');
+          const lockText = document.getElementById('badge-lock-text');
+
+          if (state.scopeTracking) {
+            lockBadge.classList.add('is-active');
+            lockText.textContent = 'TARGET LOCK: ACTIVE';
+          } else {
+            lockBadge.classList.remove('is-active');
+            lockText.textContent = 'TARGET LOCK: MANUAL';
+          }
+        });
+      }
+
+      const fireBtn = document.getElementById('fire-lasers-btn');
+      if (fireBtn) {
+        fireBtn.addEventListener('click', () => {
+          triggerLaserFire();
+          state.timeRemaining = state.cycleDuration;
+        });
+      }
+    }
+
+    function init() {
+      initThree();
+      initScope();
+      setupControls();
+      if (rafId) cancelAnimationFrame(rafId);
+      lastTime = performance.now();
+      rafId = requestAnimationFrame(renderLoop);
+    }
+
+    init();
+  </script>
+</body>
+
+</html>
